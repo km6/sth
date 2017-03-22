@@ -1,4 +1,5 @@
 <?php
+
 //简单数据库操作类，实现链式操作
 class db{
 	//数据库名称
@@ -14,6 +15,11 @@ class db{
 	private $tableName;
 	private $alias;
 	private $group;
+	private $limit;
+	private $order;
+	private $set;
+	private $sql;//执行的sql语句
+	private $queryType;//查询方式，区分添加，修改，删除
 
 	public function __construct($dbhost, $dbname, $dbuser, $dbpassword) {
 		$this->dbhost 		= $dbhost;
@@ -57,34 +63,10 @@ class db{
 	}
 
 	public function select() {
-		$sql = '';
-		if ($this->fields) {
-			$sql .= 'select '.$this->fields;
-		} else {
-			$sql .= 'select *';
-		}
+		$this->queryType = 's';
+		$this->generateSql();
 
-		if ($this->tableName) {
-			$sql .= ' from '.$this->tableName;
-		}
-
-		if ($this->alias) {
-			$sql .= ' as '.$this->alias;
-		}
-
-		if ($this->join) {
-			$sql .= $this->join;
-		}
-
-		if ($this->where) {
-			$sql .= ' where '.$this->where;
-		}
-
-		if ($this->group) {
-			$sql .= ' group by '.$this->group;
-		}
-
-		$rows = mysql_query($sql);
+		$rows = mysql_query($this->sql);
 		$row = array();
 		$resAry = array();
 		while ($row = mysql_fetch_array($rows, MYSQL_ASSOC)) {
@@ -95,7 +77,7 @@ class db{
 		return $resAry;
 	}
 
-	public function add($data = array()) {
+	public function insert($data = array()) {
 		$sql = 'INSERT INTO `'.$this->tableName.'`';
 		$colstr = $valstr = '';
 		foreach ($data as $key => $val) {
@@ -105,21 +87,58 @@ class db{
 		$colstr = rtrim($colstr, ',');
 		$valstr = rtrim($valstr, ',');
 		$sql .= '('.$colstr.') VALUES ('.$valstr.')';
-		return mysql_query($sql);
+		if (mysql_query($sql)) {
+			return $this->getLastInsertId();
+		} else {
+			return false;
+		}
+	}
+
+	/**
+	 * [update description]
+	 * @param  array  $data [description]
+	 * @return [type]       [description]
+	 */
+	public function update($data = array()) {
+		if (!empty($data)) {
+			$this->queryType = 'u';
+			$set = '';
+			foreach ($data as $key => $val) {
+				$set .= '`'.$key.'`='.$val.',';
+			}
+			$this->set = rtrim($set, ',');
+			$this->generateSql();
+			return mysql_query($this->sql);
+		}
+	}
+
+	public function delete() {
+		$this->queryType = 'd';
+		$this->generateSql();
+		return mysql_query($this->sql);
 	}
 
 	public function join($str) {
-		$this->join .= ' '.$str;
+		if ($str) {
+			$this->join .= ' '.$str;
+		}
 		return $this;
 	}
 
 	public function fields($str) {
-		$this->fields .= $str;
+		if ($str) {
+			$this->fields .= $str;
+		} else {
+			$this->fields .= ' * ';
+		}
+		
 		return $this;
 	}
 
 	public function where($str) {
-		$this->where .= $str;
+		if ($str) {
+			$this->where = ' WHERE '.$str;
+		}
 		return $this;
 	}
 
@@ -129,12 +148,48 @@ class db{
 	}
 
 	public function alias($str) {
-		$this->alias = $str;
+		if ($str) {
+			$this->alias = ' AS '.$str;
+		}
 		return $this;
 	}
 
 	public function group($str) {
-		$this->group .= $str;
+		if ($str) {
+			$this->group = ' GROUP BY '.$str;
+		}
 		return $this;
+	}
+
+	public function limit($str) {
+		$this->limit = $str;
+	}
+
+	public function order($str) {
+		$this->order = $str;
+	}
+
+	private function getLastInsertId() {
+		return mysql_query("select last_insert_id()");
+	}
+
+	private function generateSql() {
+		switch ($this->queryType) {
+			case 's':
+				$this->sql = 'SELECT '.$this->fields.' FROM '.$this->tableName.$this->alias.' '.$this->join.$this->where.$this->group.$this->order.$this->limit;
+				break;
+
+			case 'u':
+				$this->sql = 'UPDATE '.$this->tableName.' SET '.$this->set.$this->where.$this->order.$this->limit;
+				break;
+
+			case 'd':
+				$this->sql = 'DELETE FROM `'.$this->tableName.'`'.$this->where;
+				break;
+
+			default:
+				# code...
+				break;
+		}
 	}
 }
